@@ -73,9 +73,12 @@ class _SellerLoginScreenState extends State<SellerLoginScreen> {
       );
 
       // ── ثبت نشست (ذخیره دائمی + کش حافظه برای گارد روتر و UI) ──
+      // توکن عیناً ذخیره می‌شود و expires_at (در صورت وجود در پاسخ)
+      // هم کنار آن نگهداری می‌شود.
       await SellerAuthController.instance.signIn(
         token: result.token,
         account: result.account,
+        expiresAt: result.expiresAt,
       );
 
       if (!mounted) return;

@@ -13,6 +13,7 @@ import 'package:tajhizyar/core/widgets/loading_view.dart';
 import 'package:tajhizyar/features/products/data/models/product_model.dart';
 import 'package:tajhizyar/features/seller/data/models/seller_account_model.dart';
 import 'package:tajhizyar/features/seller/data/seller_auth_controller.dart';
+import 'package:tajhizyar/features/seller/data/seller_auth_repository.dart';
 import 'package:tajhizyar/features/seller/data/seller_panel_repository.dart';
 import 'package:tajhizyar/features/seller/presentation/utils/session_utils.dart';
 import 'package:tajhizyar/features/seller/presentation/widgets/edit_seller_profile_sheet.dart';
@@ -22,14 +23,21 @@ import 'package:tajhizyar/features/seller/presentation/widgets/product_form_shee
 /// پنل مدیریت فروشنده — مسیر `/seller/panel` (فقط برای فروشنده لاگین‌شده).
 ///
 /// بخش‌ها:
-///  ۱. AppBar «پنل فروشنده» + دکمه خروج از حساب
+///  ۱. AppBar «پنل فروشنده» + دکمه خروج از دستگاه فعلی
+///     (`POST /api/seller/logout.php`)
 ///  ۲. هدر حساب: لوگو/آواتار، نام فروشگاه، نام کاربری، شهر، نشان تأییدشده
 ///     + دکمه «ویرایش اطلاعات فروشگاه» ([EditSellerProfileSheet])
 ///  ۳. «محصولات من»: لیست با ویرایش و حذف (کارت مدیریت [PanelProductCard])
-///  ۴. دکمه شناور «افزودن محصول جدید» → فرم [ProductFormSheet]
+///  ۴. کارت «خروج از همه دستگاه‌ها»
+///     (`POST /api/seller/logout-all.php`)
+///  ۵. دکمه شناور «افزودن محصول جدید» → فرم [ProductFormSheet]
+///
+/// خروج (هر دو نوع): ابتدا پایان نشست در سرور فراخوانی می‌شود و سپس
+/// «در هر حالتی» توکن محلی پاک و کاربر به صفحه ورود هدایت می‌شود.
 ///
 /// گارد نشست: روتر بدون توکن را به `/seller/login` هدایت می‌کند؛
-/// علاوه بر آن، خطای 401 از سرور (انقضای نشست) هم باعث پاک شدن نشست
+/// علاوه بر آن، خطای 401 از سرور (توکن باطل یا منقضی — شامل ابطال با
+/// «خروج از همه دستگاه‌ها» در دستگاه دیگر) هم باعث پاک شدن نشست
 /// و هدایت مجدد به صفحه ورود می‌شود.
 class SellerPanelScreen extends StatefulWidget {
   const SellerPanelScreen({super.key});
@@ -40,12 +48,14 @@ class SellerPanelScreen extends StatefulWidget {
 
 class _SellerPanelScreenState extends State<SellerPanelScreen> {
   SellerPanelRepository? _repository;
+  SellerAuthRepository? _authRepository;
 
   String? _token;
   SellerAccountModel? _account;
 
   bool _initializing = true; // خواندن نشست از حافظه محلی
   bool _loading = false; // در حال دریافت محصولات
+  bool _loggingOut = false; // در حال پایان دادن به نشست در سرور (خروج)
   String? _error; // پیام خطای دریافت محصولات (null = پیام پیش‌فرض)
   List<ProductModel> _products = const <ProductModel>[];
 
@@ -54,6 +64,10 @@ class _SellerPanelScreenState extends State<SellerPanelScreen> {
 
   SellerPanelRepository get _repositoryLazy =>
       _repository ??= SellerPanelRepository();
+
+  /// ساخت تنبل ریپازیتوری احراز هویت — فقط برای فراخوانی خروج
+  SellerAuthRepository get _authRepositoryLazy =>
+      _authRepository ??= SellerAuthRepository();
 
   @override
   void initState() {
@@ -64,6 +78,7 @@ class _SellerPanelScreenState extends State<SellerPanelScreen> {
   @override
   void dispose() {
     _repository?.dispose();
+    _authRepository?.dispose();
     super.dispose();
   }
 
@@ -130,19 +145,80 @@ class _SellerPanelScreenState extends State<SellerPanelScreen> {
   /// پیاده‌سازی مشترک در [forceRelogin] تا همه‌جا رفتار یکسان باشد.
   Future<void> _forceRelogin() => forceRelogin(context);
 
-  /// خروج اختیاری از حساب (با تأیید).
-  Future<void> _logout() async {
+  /// خروج از حساب — دستگاه فعلی یا همه دستگاه‌ها.
+  ///
+  /// ترتیب عملیات:
+  ///  ۱. تأیید کاربر با دیالوگ
+  ///  ۲. فراخوانی سرور: `logout.php` (دستگاه فعلی) یا
+  ///     `logout-all.php` (همه دستگاه‌ها) با توکن Bearer
+  ///  ۳. پاک کردن کامل نشست محلی و هدایت به صفحه ورود — «در هر حالتی»
+  ///     حتی اگر فراخوانی سرور ناموفق بود (مثلاً قطع اینترنت)، خروج
+  ///     محلی انجام می‌شود و فقط پیام هشدار مناسب نمایش داده می‌شود.
+  Future<void> _logout({required bool allDevices}) async {
+    if (_loggingOut) return;
+
     final bool? confirmed = await _showConfirmDialog(
-      title: 'خروج از حساب',
-      message: 'آیا مطمئن هستید که می‌خواهید از حساب خود خارج شوید؟',
-      confirmLabel: 'خروج',
+      title: allDevices ? 'خروج از همه دستگاه‌ها' : 'خروج از حساب',
+      message: allDevices
+          ? 'با این کار نشست شما در همه دستگاه‌ها — از جمله همین دستگاه — '
+              'پایان داده می‌شود و باید دوباره وارد شوید.\n\n'
+              'آیا مطمئن هستید؟'
+          : 'آیا مطمئن هستید که می‌خواهید از حساب خود خارج شوید؟',
+      confirmLabel: allDevices ? 'خروج از همه' : 'خروج',
+      isDestructive: allDevices,
     );
     if (confirmed != true) return;
+    if (!mounted) return; // دیالوگ ممکن است بعد از dispose بودن صفحه بسته شود
 
+    final String? token = _token;
+    if (token == null) return;
+
+    // گرفتن messenger قبل از await (الگوی امن کل پروژه)
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    setState(() => _loggingOut = true);
+
+    // پیام هشدار در صورت ناموفق بودن پایان نشست سمت سرور — null یعنی موفق
+    String? warningNotice;
+    try {
+      if (allDevices) {
+        await _authRepositoryLazy.logoutAll(token: token);
+      } else {
+        await _authRepositoryLazy.logout(token: token);
+      }
+    } on ApiException catch (error) {
+      // ۴۰۱ یعنی نشست از قبل در سرور باطل است — خروج محلی کافی است.
+      if (!error.isSessionExpired) {
+        warningNotice = _logoutWarning(allDevices);
+      }
+    } catch (_) {
+      warningNotice = _logoutWarning(allDevices);
+    }
+
+    // پاک کردن توکن و نشست محلی — بدون وابستگی به نتیجه فراخوانی سرور
     await SellerAuthController.instance.signOut();
     if (!mounted) return;
+
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            warningNotice ??
+                (allDevices
+                    ? 'از همه دستگاه‌ها خارج شدید.'
+                    : 'از حساب خود خارج شدید.'),
+          ),
+        ),
+      );
     context.go(AppRoutes.sellerLogin);
   }
+
+  /// پیام هشدار خروج — وقتی فراخوانی سرور ناموفق بود ولی خروج محلی
+  /// انجام می‌شود (توکن محلی پاک شده، اما ابطال سمت سرور تضمین نیست).
+  static String _logoutWarning(bool allDevices) => allDevices
+      ? 'از این دستگاه خارج شدید؛ اما خروج از سایر دستگاه‌ها ممکن نشد؛ '
+          'اتصال اینترنت را بررسی کنید.'
+      : 'از حساب خارج شدید؛ اما پایان نشست در سرور انجام نشد.';
 
   /// ویرایش اطلاعات فروشگاه (نام، توضیحات، شهر، تلفن، واتساپ، لوگو) —
   /// پس از ذخیره موفق، هدر پنل از حساب به‌روزشده‌ی کنترلر تازه می‌شود.
@@ -305,11 +381,22 @@ class _SellerPanelScreenState extends State<SellerPanelScreen> {
       appBar: AppBar(
         title: const Text('پنل فروشنده'),
         actions: <Widget>[
-          IconButton(
-            onPressed: _logout,
-            icon: const Icon(Icons.logout_rounded),
-            tooltip: 'خروج از حساب',
-          ),
+          // دکمه خروج از دستگاه فعلی — هنگام انجام خروج: اسپینر
+          if (_loggingOut)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.4),
+              ),
+            )
+          else
+            IconButton(
+              onPressed: () => _logout(allDevices: false),
+              icon: const Icon(Icons.logout_rounded),
+              tooltip: 'خروج از حساب',
+            ),
           const SizedBox(width: 4),
         ],
       ),
@@ -392,6 +479,37 @@ class _SellerPanelScreenState extends State<SellerPanelScreen> {
                     onDelete: () => _deleteProduct(product),
                   ),
               ],
+
+            const SizedBox(height: 24),
+
+            // ۴) خروج از همه دستگاه‌ها — پایان نشست حساب در تمام دستگاه‌ها
+            //    (شامل همین دستگاه) از طریق logout-all.php
+            Card(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              child: ListTile(
+                onTap: _loggingOut ? null : () => _logout(allDevices: true),
+                enabled: !_loggingOut,
+                leading: const Icon(
+                  Icons.phonelink_erase_rounded,
+                  color: AppColors.error,
+                ),
+                title: Text(
+                  'خروج از همه دستگاه‌ها',
+                  style: textTheme.titleSmall?.copyWith(
+                    color: AppColors.error,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                subtitle: Text(
+                  'نشست این حساب در تمام دستگاه‌ها پایان داده می‌شود '
+                  'و باید دوباره وارد شوید.',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondary,
+                    height: 1.7,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),

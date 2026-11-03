@@ -5,7 +5,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tajhizyar/features/seller/data/models/seller_account_model.dart';
 
 /// سرویس مدیریت نشست فروشنده — ذخیره، خواندن و پاک کردن توکن
-/// احراز هویت و اطلاعات حساب با `shared_preferences`.
+/// احراز هویت، زمان انقضای آن و اطلاعات حساب با `shared_preferences`.
+///
+/// توکن در سیستم جدید یک رشته مات (opaque) است و بدون تفسیر ذخیره
+/// می‌شود؛ زمان انقضا (اختیاری، از پاسخ ورود) به‌صورت epoch
+/// میلی‌ثانیه نگهداری می‌شود.
 ///
 /// عمداً سبک و بدون وابستگی به UI است تا هم در روتر (گارد مسیرها)
 /// و هم در صفحات ورود/پنل قابل استفاده باشد.
@@ -18,6 +22,9 @@ class SellerAuthStorage {
 
   /// کلید توکن در حافظه محلی
   static const String _tokenKey = 'seller_auth_token';
+
+  /// کلید زمان انقضای توکن (epoch میلی‌ثانیه) در حافظه محلی
+  static const String _expiresAtKey = 'seller_auth_expires_at';
 
   /// کلید اطلاعات حساب در حافظه محلی
   static const String _accountKey = 'seller_auth_account';
@@ -38,6 +45,27 @@ class SellerAuthStorage {
     return token.trim();
   }
 
+  // ─────────── زمان انقضای توکن ───────────
+
+  /// ذخیره زمان اعلامی انقضای توکن (از پاسخ ورود، اختیاری) —
+  /// null یعنی پاک کردن مقدار قبلی.
+  Future<void> saveExpiresAt(DateTime? expiresAt) async {
+    final SharedPreferences prefs = await _instance;
+    if (expiresAt == null) {
+      await prefs.remove(_expiresAtKey);
+      return;
+    }
+    await prefs.setInt(_expiresAtKey, expiresAt.millisecondsSinceEpoch);
+  }
+
+  /// خواندن زمان انقضای ذخیره‌شده — ذخیره نشده → null.
+  Future<DateTime?> readExpiresAt() async {
+    final SharedPreferences prefs = await _instance;
+    final int? milliseconds = prefs.getInt(_expiresAtKey);
+    if (milliseconds == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+  }
+
   // ─────────── اطلاعات حساب ───────────
 
   /// ذخیره اطلاعات حساب فروشنده (serialize شده به JSON).
@@ -56,10 +84,11 @@ class SellerAuthStorage {
 
   // ─────────── خروج ───────────
 
-  /// پاک کردن کامل نشست (خروج از حساب).
+  /// پاک کردن کامل نشست (خروج از حساب — توکن، زمان انقضا و حساب).
   Future<void> clear() async {
     final SharedPreferences prefs = await _instance;
     await prefs.remove(_tokenKey);
+    await prefs.remove(_expiresAtKey);
     await prefs.remove(_accountKey);
   }
 

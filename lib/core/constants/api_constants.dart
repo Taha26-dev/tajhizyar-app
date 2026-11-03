@@ -70,6 +70,16 @@ abstract final class ApiConstants {
   /// `Authorization: Bearer {token}` هستند.
   static Uri sellerProfileUri() => Uri.https(_host, '/api/seller/profile.php');
 
+  /// `POST /api/seller/logout.php` — خروج از دستگاه فعلی
+  /// (نیازمند هدر `Authorization: Bearer {token}`؛ فقط توکن فعلی باطل می‌شود)
+  static Uri sellerLogoutUri() => Uri.https(_host, '/api/seller/logout.php');
+
+  /// `POST /api/seller/logout-all.php` — خروج از همه دستگاه‌ها
+  /// (نیازمند هدر `Authorization: Bearer {token}`؛ همه توکن‌های فعال
+  /// حساب — از جمله توکن همین دستگاه — باطل می‌شوند)
+  static Uri sellerLogoutAllUri() =>
+      Uri.https(_host, '/api/seller/logout-all.php');
+
   /// `GET /api/products.php` — فهرست محصولات (با پارامترهای اختیاری)
   static Uri productsUri({
     int? limit,

@@ -22,6 +22,7 @@ class SellerAuthController {
 
   String? _token;
   SellerAccountModel? _account;
+  DateTime? _expiresAt;
 
   /// وضعیت نشست برای شنوندگان UI — true یعنی فروشنده لاگین است.
   final ValueNotifier<bool> isLoggedInNotifier = ValueNotifier<bool>(false);
@@ -35,6 +36,15 @@ class SellerAuthController {
   /// اطلاعات حساب فروشنده لاگین‌شده — بدون نشست → null
   SellerAccountModel? get account => _account;
 
+  /// زمان اعلامی انقضای توکن از سمت سرور — ممکن است null باشد
+  /// (سرور همیشه این فیلد را نمی‌فرستد).
+  ///
+  /// ⚠️ صرفاً اطلاعاتی است و مبنای خروج خودکار محلی «نیست»: در سیستم
+  /// جدید توکن ۳۰ روزه است و «با فعالیت تمدید می‌شود»، پس مقدار محلی
+  /// ممکن است قدیمی باشد؛ ملاک واقعی اعتبار، پاسخ ۴۰۱ سرور است
+  /// (مدیریت یک‌جا با `forceRelogin` در session_utils).
+  DateTime? get expiresAt => _expiresAt;
+
   /// بارگذاری نشست ذخیره‌شده از حافظه محلی.
   ///
   /// باید یک‌بار در `main()` و پیش از `runApp` فراخوانی شود تا اولین
@@ -42,18 +52,25 @@ class SellerAuthController {
   Future<void> loadSession() async {
     _token = await _storage.readToken();
     _account = await _storage.readAccount();
+    _expiresAt = await _storage.readExpiresAt();
     isLoggedInNotifier.value = _token != null;
   }
 
   /// ثبت نشست پس از ورود موفق (ذخیره دائمی + به‌روزرسانی کش حافظه).
+  ///
+  /// [expiresAt] زمان اعلامی انقضای توکن از پاسخ ورود است — اختیاری؛
+  /// توکن خودش عیناً و بدون تغییر ذخیره می‌شود.
   Future<void> signIn({
     required String token,
     required SellerAccountModel account,
+    DateTime? expiresAt,
   }) async {
     await _storage.saveToken(token);
     await _storage.saveAccount(account);
+    await _storage.saveExpiresAt(expiresAt);
     _token = token;
     _account = account;
+    _expiresAt = expiresAt;
     isLoggedInNotifier.value = true;
   }
 
@@ -65,11 +82,17 @@ class SellerAuthController {
     _account = account;
   }
 
-  /// خروج از حساب — پاک کردن کامل نشست از حافظه دائمی و کش.
+  /// خروج از حساب — پاک کردن کامل نشست (توکن، انقضا و حساب) از
+  /// حافظه دائمی و کش.
+  ///
+  /// ⚠️ این متد فقط «خروج محلی» است؛ باطل کردن توکن در سرور با
+  /// فراخوانی logout / logout-all (در [SellerAuthRepository]) انجام
+  /// می‌شود و صفحه پنل مسئول فراخوانی آن پیش از این متد است.
   Future<void> signOut() async {
     await _storage.clear();
     _token = null;
     _account = null;
+    _expiresAt = null;
     isLoggedInNotifier.value = false;
   }
 }
