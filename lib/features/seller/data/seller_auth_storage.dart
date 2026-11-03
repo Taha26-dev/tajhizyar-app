@@ -1,0 +1,68 @@
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:tajhizyar/features/seller/data/models/seller_account_model.dart';
+
+/// سرویس مدیریت نشست فروشنده — ذخیره، خواندن و پاک کردن توکن
+/// احراز هویت و اطلاعات حساب با `shared_preferences`.
+///
+/// عمداً سبک و بدون وابستگی به UI است تا هم در روتر (گارد مسیرها)
+/// و هم در صفحات ورود/پنل قابل استفاده باشد.
+class SellerAuthStorage {
+  SellerAuthStorage({Future<SharedPreferences>? prefs})
+      : _prefsOverride = prefs;
+
+  /// امکان تزریق نمونه آماده SharedPreferences در تست‌ها
+  final Future<SharedPreferences>? _prefsOverride;
+
+  /// کلید توکن در حافظه محلی
+  static const String _tokenKey = 'seller_auth_token';
+
+  /// کلید اطلاعات حساب در حافظه محلی
+  static const String _accountKey = 'seller_auth_account';
+
+  // ─────────── توکن ───────────
+
+  /// ذخیره توکن احراز هویت پس از ورود موفق.
+  Future<void> saveToken(String token) async {
+    final SharedPreferences prefs = await _instance;
+    await prefs.setString(_tokenKey, token.trim());
+  }
+
+  /// خواندن توکن ذخیره‌شده — بدون نشست فعال → null.
+  Future<String?> readToken() async {
+    final SharedPreferences prefs = await _instance;
+    final String? token = prefs.getString(_tokenKey);
+    if (token == null || token.trim().isEmpty) return null;
+    return token.trim();
+  }
+
+  // ─────────── اطلاعات حساب ───────────
+
+  /// ذخیره اطلاعات حساب فروشنده (serialize شده به JSON).
+  Future<void> saveAccount(SellerAccountModel account) async {
+    final SharedPreferences prefs = await _instance;
+    await prefs.setString(_accountKey, jsonEncode(account.toJson()));
+  }
+
+  /// خواندن اطلاعات حساب فروشنده — بدون نشست → null.
+  Future<SellerAccountModel?> readAccount() async {
+    final SharedPreferences prefs = await _instance;
+    final String? raw = prefs.getString(_accountKey);
+    if (raw == null || raw.isEmpty) return null;
+    return SellerAccountModel.fromJsonString(raw);
+  }
+
+  // ─────────── خروج ───────────
+
+  /// پاک کردن کامل نشست (خروج از حساب).
+  Future<void> clear() async {
+    final SharedPreferences prefs = await _instance;
+    await prefs.remove(_tokenKey);
+    await prefs.remove(_accountKey);
+  }
+
+  Future<SharedPreferences> get _instance =>
+      _prefsOverride ?? SharedPreferences.getInstance();
+}

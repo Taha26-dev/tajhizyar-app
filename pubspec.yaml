@@ -1,0 +1,57 @@
+name: tajhizyar
+description: "تجهیزیار — بازار آنلاین ابزار و تجهیزات صنعتی"
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  # Flutter 3.27+ (CardThemeData و Color.withValues)
+  sdk: ">=3.6.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # مسیریابی اعلانی (Declarative Routing)
+  go_router: ^14.0.0
+
+  # فونت فارسی وزیرمتن (Vazirmatn)
+  google_fonts: ^6.0.0
+
+  # درخواست‌های شبکه (REST API)
+  # نکته: نسخه 2.x این پکیج در pub.dev وجود ندارد؛ ^1.6.0 آخرین نسخه پایدار است
+  # و API استفاده‌شده در کد (Client، get/post/delete، bodyBytes) یکسان است.
+  http: ^1.6.0
+
+  # بازکردن لینک‌های خارجی (تماس تلفنی و واتساپ)
+  url_launcher: ^6.2.0
+
+  # ذخیره‌سازی محلی (توکن و اطلاعات نشست فروشنده)
+  shared_preferences: ^2.3.0
+  image_picker: ^1.2.2
+  http_parser: ^4.1.2
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+
+  # تولید آیکون لانچر اندروید از assets/icons/app_icon.png
+  # اجرا: dart run flutter_launcher_icons
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+
+  # دارایی‌های اپلیکیشن
+  assets:
+    - assets/icons/
+    # آیکون لانچر: assets/icons/app_icon.png
+    # لوگوی داخل اپ: assets/icons/logo.png
+
+# ── تنظیمات آیکون لانچر (flutter_launcher_icons) ──
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icons/app_icon.png"
+  adaptive_icon_background: "#1E3A5F"
+  adaptive_icon_foreground: "assets/icons/app_icon.png"

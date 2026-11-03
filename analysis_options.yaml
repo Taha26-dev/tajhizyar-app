@@ -1,0 +1,8 @@
+# قوانین تحلیل استاتیک کد پروژه تجهیزیار
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    prefer_const_constructors: true
+    prefer_const_declarations: true
+    always_use_package_imports: true
